@@ -8,7 +8,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"strconv"
+	"time"
 
 	"google.golang.org/grpc/metadata"
 
@@ -51,10 +53,12 @@ func (ChatServer) Login(ctx context.Context, req *grpc_c.LoginRequest) (resp *gr
 // Create 创建聊天服务
 func (ChatServer) Create(stream grpc_c.ChatRoomServe_CreateServer) (err error) {
 	room := chat.NewRoom()
-	_Rooms[1] = room
+	rand.Seed(time.Now().Unix())
+	rid := rand.Int(10)
+	_Rooms[int64(rid)] = room
 	go room.Run()
 	err = stream.Send(&grpc_c.CreateResponse{
-		ID: 1,
+		ID: int64(rid),
 	})
 	if err != nil {
 		if ce := logger.Logger.Check(zap.WarnLevel, "create fail "); ce != nil {
