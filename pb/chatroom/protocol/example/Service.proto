@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package go_generate_chatroom.example;
+
+service Service {
+    rpc Ping (PingRequest) returns (PingResponse);
+}
+message PingRequest{
+}
+message PingResponse{
+}

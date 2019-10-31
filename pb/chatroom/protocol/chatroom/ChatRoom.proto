@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package go_generate_chatroom.chat;
+
+service ChatRoomServe{
+    rpc Login(LoginRequest) returns (LoginResponse);
+    
+    rpc Create (stream CreateRequest) returns (stream CreateResponse);
+
+    rpc Chat(stream ChatRequset) returns (stream ChatResponse);
+}
+message CreateRequest{
+}
+message CreateResponse{
+    int64 ID=1;
+}
+
+message LoginRequest {
+    string Uname = 1;
+    string Passwd = 2;
+}
+
+message LoginResponse{
+    string Result = 1;
+}
+
+message ChatRequset {
+    int64 ID = 2;
+    string Cmsg = 1;
+}
+ 
+message ChatResponse{
+    string Smsg = 2;
+    string Who = 1;
+}
