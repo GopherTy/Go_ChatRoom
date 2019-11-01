@@ -20,23 +20,30 @@ type user struct {
 	Passwd string
 }
 
-// newEg 创建数据库引擎
-func (u User) newEg() (engine *xorm.Engine, err error) {
-	engine, err = xorm.NewEngine("mysql", "root:Tyx123456.@/test?charset=utf8")
+//
+var _Engine *xorm.Engine
+
+func init() {
+	engine, err := xorm.NewEngine("mysql", "root:Tyx123456.@/test?charset=utf8")
 	if err != nil {
 		if ce := logger.Logger.Check(zap.WarnLevel, "create engine fail"); ce != nil {
 			ce.Write(zap.Error(err))
 		}
 		return
 	}
-	ok, err := engine.IsTableExist(&user{})
+	_Engine = engine
+}
+
+// createTable 创建数据库表
+func (u User) createTable() (err error) {
+	ok, err := _Engine.IsTableExist(&user{})
 	if err != nil {
 		return
 	}
 	if ok {
 		return
 	}
-	err = engine.CreateTables(&user{})
+	err = _Engine.CreateTables(&user{})
 	if err != nil {
 		if ce := logger.Logger.Check(zap.WarnLevel, "create table fail"); ce != nil {
 			ce.Write(zap.Error(err))
@@ -48,11 +55,11 @@ func (u User) newEg() (engine *xorm.Engine, err error) {
 
 // SignUp ...
 func (u User) SignUp(name string) (err error) {
-	engine, err := u.newEg()
+	err = u.createTable()
 	if err != nil {
 		return
 	}
-	_, err = engine.Insert(&user{
+	_, err = _Engine.Insert(&user{
 		Name: name,
 	})
 	if err != nil {
@@ -66,8 +73,8 @@ func (u User) SignUp(name string) (err error) {
 
 // Check 用户验证
 func (u User) Check() (ok bool, err error) {
-	eg, err := u.newEg()
-	ok, err = eg.Where("name = ?", u.Name).Get(&user{})
+	err = u.createTable()
+	ok, err = _Engine.Where("name = ?", u.Name).Get(&user{})
 	if err != nil {
 		return
 	}

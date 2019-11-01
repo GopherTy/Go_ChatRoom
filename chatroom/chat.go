@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"strconv"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc/metadata"
@@ -22,27 +23,24 @@ type ChatServer struct {
 }
 
 var _Rooms = make(map[int64]*chat.Room)
-var _Room = chat.NewRoom()
-var _Name string
 
-func init() {
-	go _Room.Run()
-}
+// var _Room = chat.NewRoom()
+// var _Name string
+
+// func init() {
+// 	go _Room.Run()
+// }
 
 // Login ...
 func (ChatServer) Login(ctx context.Context, req *grpc_c.LoginRequest) (resp *grpc_c.LoginResponse, err error) {
-	_Name = req.GetUname()
+	uName := req.Uname
 	user := model.User{
-		Name: _Name,
+		Name: uName,
 	}
 	ok, err := user.Check()
 	if ok {
-		err = _Room.SendMsg("system", _Name+"  come in")
-		if err != nil {
-			return
-		}
 		return &grpc_c.LoginResponse{
-			Result: req.GetUname() + " weclome",
+			Result: req.GetUname() + " weclome to chatroom system",
 		}, nil
 	}
 	return &grpc_c.LoginResponse{
@@ -54,8 +52,13 @@ func (ChatServer) Login(ctx context.Context, req *grpc_c.LoginRequest) (resp *gr
 func (ChatServer) Create(stream grpc_c.ChatRoomServe_CreateServer) (err error) {
 	room := chat.NewRoom()
 	rand.Seed(time.Now().Unix())
-	rid := rand.Int(10)
+	rid := rand.Intn(10) + 1
+
+	lock := sync.Mutex{}
+	lock.Lock()
 	_Rooms[int64(rid)] = room
+	lock.Unlock()
+
 	go room.Run()
 	err = stream.Send(&grpc_c.CreateResponse{
 		ID: int64(rid),
@@ -66,34 +69,63 @@ func (ChatServer) Create(stream grpc_c.ChatRoomServe_CreateServer) (err error) {
 		}
 		return
 	}
+
+	for {
+		_, err := stream.Recv()
+		if err != nil {
+			break
+		}
+	}
+	delete(_Rooms, int64(rid))
 	return
 }
 
 // Chat  聊天服务
 func (ChatServer) Chat(stream grpc_c.ChatRoomServe_ChatServer) (err error) {
-	name := _Name
-	fmt.Println("join", name)
-	ch := make(chan chat.Msg, 10)
-	md, ok := metadata.FromIncomingContext(stream.Context())
-	var id int64
-	var msg string
+	// 从 context 取出数据
+	var _Room *chat.Room
+	var name string
+	md, _ := metadata.FromIncomingContext(stream.Context())
+	names := md["uname"]
+	// 防止恶意攻击服务器
+	if len(names) != 0 {
+		name = names[0]
+	} else {
+		return
+	}
+	id, ok := md["roomid"]
+	var req *grpc_c.ChatRequset
 	if ok {
-		for i, v := range md {
-			x, err := strconv.Atoi(i)
-			id = int64(x)
+		if len(id) != 0 {
+			x, err := strconv.ParseInt(id[0], 10, 64)
+			fmt.Println("id", x)
 			if err != nil {
 				log.Fatalln(err)
-				break
 			}
-			if rm, ok := _Rooms[id]; ok {
+			if rm, ok := _Rooms[x]; ok {
 				_Room = rm
 			}
-			msg = v[0]
+		} else {
+			return
+		}
+	} else {
+		req, err = stream.Recv()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		if rm, ok := _Rooms[req.ID]; ok {
+			_Room = rm
+			err = _Room.SendMsg("system msg", req.Cmsg)
+			if err != nil {
+				return
+			}
+		} else {
+			return
 		}
 	}
 
-	fmt.Println(msg)
-
+	ch := make(chan chat.Msg, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	f := chat.NewRecv(func(room *chat.Room, msg chat.Msg) {
 		fmt.Println("callback", name, msg)
@@ -114,6 +146,7 @@ func (ChatServer) Chat(stream grpc_c.ChatRoomServe_ChatServer) (err error) {
 				fmt.Println("msg", name, msg)
 				if work {
 					err := stream.Send(&grpc_c.ChatResponse{
+						Who:  msg.Name,
 						Smsg: msg.Content,
 					})
 					if err != nil {
@@ -128,7 +161,6 @@ func (ChatServer) Chat(stream grpc_c.ChatRoomServe_ChatServer) (err error) {
 		}
 	}()
 
-	var req *grpc_c.ChatRequset
 	for {
 		req, err = stream.Recv()
 		if err != nil {

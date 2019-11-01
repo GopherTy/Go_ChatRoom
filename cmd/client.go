@@ -6,10 +6,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -67,6 +69,7 @@ func init() {
 // chatRoomClient 聊天室客户端
 func chatRoomClient(c *grpc.ClientConn) (err error) {
 	client := grpc_c.NewChatRoomServeClient(c)
+	fmt.Println("please enter your name: ")
 	input := bufio.NewReader(os.Stdin)
 	msg, err := input.ReadString('\n')
 	rs := strings.Split(msg, "\n")
@@ -74,9 +77,10 @@ func chatRoomClient(c *grpc.ClientConn) (err error) {
 		fmt.Println(err)
 	}
 	resp, err := client.Login(context.Background(), &grpc_c.LoginRequest{
-		Uname:  rs[0],
-		Passwd: "123",
+		Uname: rs[0],
 	})
+	userName := rs[0]
+
 	if resp.Result == "fail" {
 		fmt.Println("please sign in")
 	} else {
@@ -89,20 +93,84 @@ func chatRoomClient(c *grpc.ClientConn) (err error) {
 			fmt.Println(err)
 		}
 		var ctx context.Context
+		var md = make(map[string]string)
+		var rid int
+		var chat grpc_c.ChatRoomServe_ChatClient
 		if rs[0] == "y" {
 			roomID, _ := createRoom(client) // 创建聊天室 ...
-			var md map[string]string
-			k := strconv.Itoa(int(roomID))
-			md[k] = "Myroom"
+			k := strconv.FormatInt(roomID, 10)
+			md["roomID"] = k
+			md["uname"] = userName
 			mD := metadata.New(md)
 			ctx = metadata.NewOutgoingContext(context.Background(), mD)
+		} else {
+			md["uname"] = userName
+			mD := metadata.New(md)
+			ctx = metadata.NewOutgoingContext(context.Background(), mD)
+			fmt.Println("please enter room id: ")
+			input = bufio.NewReader(os.Stdin)
+			msg, err = input.ReadString('\n')
+			rs = strings.Split(msg, "\n")
+			if err != nil {
+				fmt.Println(err)
+			}
+			rid, err = strconv.Atoi(rs[0])
+			if err != nil {
+				return err
+			}
 		}
-		ctx = context.Background()
-		name := rs[0]
-		chat, err := client.Chat(ctx)
-		if err != nil {
-			log.SetFlags(log.LstdFlags)
-			log.Fatalln(err)
+
+		// 判断房间号是否存在，不存在提示用户输入正确的房间号
+		if rid != 0 {
+			chat, err = client.Chat(ctx)
+			if err != nil {
+				log.SetFlags(log.LstdFlags)
+				log.Fatalln(err)
+			}
+			chat.Send(&grpc_c.ChatRequset{
+				Cmsg: userName + " come in",
+				ID:   int64(rid),
+			})
+			var id int64
+			for {
+				_, err := chat.Recv()
+				if err != nil && err == io.EOF {
+					fmt.Println("room id not exist, please enter correct room id: ")
+					uReader := bufio.NewReader(os.Stdin)
+					umsg, err := uReader.ReadString('\n')
+					if err != nil {
+						log.Fatalln(err)
+						break
+					}
+					rs = strings.Split(umsg, "\n")
+					id, err = strconv.ParseInt(rs[0], 10, 64)
+					if err != nil {
+						log.Fatalf("your enter error ! please enter correct room id format")
+					}
+					chat, err = client.Chat(ctx)
+					if err != nil {
+						log.SetFlags(log.LstdFlags)
+						log.Fatalln(err)
+					}
+					err = chat.Send(&grpc_c.ChatRequset{
+						ID:   id,
+						Cmsg: userName + " come in",
+					})
+
+					if err != nil {
+						fmt.Println("send fail")
+						break
+					}
+				} else {
+					break
+				}
+			}
+		} else {
+			chat, err = client.Chat(ctx)
+			if err != nil {
+				log.SetFlags(log.LstdFlags)
+				log.Fatalln(err)
+			}
 		}
 
 		go func() {
@@ -112,7 +180,7 @@ func chatRoomClient(c *grpc.ClientConn) (err error) {
 					log.Fatal(err)
 					break
 				}
-				fmt.Println(resp1.Who, " say:"+resp1.Smsg)
+				fmt.Println(time.Now().Format("2006-1-2 15:04:05 ")+resp1.Who, ": "+resp1.Smsg)
 			}
 		}()
 
@@ -133,7 +201,7 @@ func chatRoomClient(c *grpc.ClientConn) (err error) {
 				}
 			} else {
 				err = chat.Send(&grpc_c.ChatRequset{
-					Cmsg: name,
+					Cmsg: userName,
 				})
 				if err != nil {
 					log.Fatalln(err)
@@ -142,7 +210,6 @@ func chatRoomClient(c *grpc.ClientConn) (err error) {
 			}
 		}
 	}
-
 	return
 }
 
@@ -154,6 +221,6 @@ func createRoom(client grpc_c.ChatRoomServeClient) (roomID int64, err error) {
 		return roomID, err
 	}
 	rs, err := room.Recv()
-	fmt.Println(rs.ID)
-	return
+	fmt.Println("your room id is:", rs.ID)
+	return rs.ID, nil
 }
