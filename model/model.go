@@ -10,7 +10,8 @@ import (
 
 // User ...
 type User struct {
-	Name string
+	Name   string
+	Passwd string
 }
 
 // user  user table
@@ -74,7 +75,7 @@ func (u User) SignUp(name string) (err error) {
 // Check 用户验证
 func (u User) Check() (ok bool, err error) {
 	err = u.createTable()
-	ok, err = _Engine.Where("name = ?", u.Name).Get(&user{})
+	ok, err = _Engine.Where("name = ?", u.Name).And("passwd = ?", u.Passwd).Get(&user{})
 	if err != nil {
 		return
 	}

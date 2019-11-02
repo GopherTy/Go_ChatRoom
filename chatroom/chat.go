@@ -33,10 +33,9 @@ var _Rooms = make(map[int64]*chat.Room)
 
 // Login ...
 func (ChatServer) Login(ctx context.Context, req *grpc_c.LoginRequest) (resp *grpc_c.LoginResponse, err error) {
-	// 预留验证密码
-	uName := req.Uname
 	user := model.User{
-		Name: uName,
+		Name:   req.Uname,
+		Passwd: req.Passwd,
 	}
 	ok, err := user.Check()
 	if ok {
