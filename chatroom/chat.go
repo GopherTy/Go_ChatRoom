@@ -76,7 +76,11 @@ func (ChatServer) Create(stream grpc_c.ChatRoomServe_CreateServer) (err error) {
 			break
 		}
 	}
+
+	room.Close()
+	lock.Lock()
 	delete(_Rooms, int64(rid))
+	lock.Unlock()
 	return
 }
 
@@ -131,6 +135,9 @@ func (ChatServer) Chat(stream grpc_c.ChatRoomServe_ChatServer) (err error) {
 		fmt.Println("callback", name, msg)
 		select {
 		case ch <- msg:
+			if msg.Name == "exit" {
+				cancel()
+			}
 			fmt.Println("callback <-", name, msg)
 		case <-ctx.Done():
 		}

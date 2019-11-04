@@ -3,7 +3,6 @@ package model
 import (
 	"chatroom/logger"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-xorm/xorm"
 	"go.uber.org/zap"
 )
@@ -16,8 +15,8 @@ type User struct {
 
 // user  user table
 type user struct {
-	ID     int64 `xorm:"pk autoincr notnull unique 'id' int "`
-	Name   string
+	ID     int64  `xorm:"pk autoincr notnull unique 'id' int "`
+	Name   string `xorm:"notnull"`
 	Passwd string
 }
 
@@ -33,20 +32,60 @@ func init() {
 		return
 	}
 	_Engine = engine
+	u := User{}
+	err = CreateTable(u)
+	if err != nil {
+		return
+	}
 }
 
-// createTable 创建数据库表
-func (u User) createTable() (err error) {
-	ok, err := _Engine.IsTableExist(&user{})
+// CreateTable 创建数据库表
+func CreateTable(table interface{}) (err error) {
+	ok, err := _Engine.IsTableExist(table)
 	if err != nil {
 		return
 	}
 	if ok {
+		err = _Engine.Sync2(table)
+		if err != nil {
+			if ce := logger.Logger.Check(zap.WarnLevel, "create uniques fail"); ce != nil {
+				ce.Write(zap.Error(err))
+			}
+			return
+		}
+		err = _Engine.CreateUniques(table)
+		if err != nil {
+			if ce := logger.Logger.Check(zap.WarnLevel, "create uniques fail"); ce != nil {
+				ce.Write(zap.Error(err))
+			}
+			return
+		}
+		err = _Engine.CreateIndexes(table)
+		if err != nil {
+			if ce := logger.Logger.Check(zap.WarnLevel, "create indexes fail"); ce != nil {
+				ce.Write(zap.Error(err))
+			}
+			return
+		}
 		return
 	}
-	err = _Engine.CreateTables(&user{})
+	err = _Engine.CreateTables(table)
 	if err != nil {
 		if ce := logger.Logger.Check(zap.WarnLevel, "create table fail"); ce != nil {
+			ce.Write(zap.Error(err))
+		}
+		return
+	}
+	err = _Engine.CreateUniques(table)
+	if err != nil {
+		if ce := logger.Logger.Check(zap.WarnLevel, "create uniques fail"); ce != nil {
+			ce.Write(zap.Error(err))
+		}
+		return
+	}
+	err = _Engine.CreateIndexes(table)
+	if err != nil {
+		if ce := logger.Logger.Check(zap.WarnLevel, "create indexes fail"); ce != nil {
 			ce.Write(zap.Error(err))
 		}
 		return
@@ -56,10 +95,6 @@ func (u User) createTable() (err error) {
 
 // SignUp ...
 func (u User) SignUp(name string) (err error) {
-	err = u.createTable()
-	if err != nil {
-		return
-	}
 	_, err = _Engine.Insert(&user{
 		Name: name,
 	})
@@ -74,8 +109,7 @@ func (u User) SignUp(name string) (err error) {
 
 // Check 用户验证
 func (u User) Check() (ok bool, err error) {
-	err = u.createTable()
-	ok, err = _Engine.Where("name = ?", u.Name).And("passwd = ?", u.Passwd).Get(&user{})
+	ok, err = _Engine.Where("name=? And passwd = ?", u.Name, u.Passwd).Get(&user{})
 	if err != nil {
 		return
 	}

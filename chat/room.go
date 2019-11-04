@@ -104,5 +104,8 @@ func (r *Room) UnRegistor(recv Recv) {
 
 // Close ...
 func (r *Room) Close() {
+	r.broadcast(Msg{
+		Name: "exit",
+	})
 	close(r.exit)
 }

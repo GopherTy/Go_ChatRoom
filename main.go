@@ -1,9 +1,10 @@
 package main
 
 import (
-	"log"
 	"chatroom/cmd"
+	"log"
 
+	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/golang/protobuf/proto"
 )
 
